@@ -19,8 +19,7 @@ A decentralized loyalty program built on Ethereum blockchain technology that all
   - [Admin Experience](#admin-experience)
 - [Admin Access Guide](#-admin-access-guide)
 - [Deployment](#-deployment)
-- [Contributing](#-contributing)
-- [License](#-license)
+
 
 ## ✨ Features
 
