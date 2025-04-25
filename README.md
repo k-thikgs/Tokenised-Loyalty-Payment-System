@@ -2,7 +2,7 @@
 
 A decentralized loyalty program built on Ethereum blockchain technology that allows businesses to issue loyalty points to customers as ERC20 tokens, with a beautiful user interface for shopping, point redemption, and partner management.
 
-![Blockchain Loyalty Program](/screenshot.png)
+
 
 ## 📋 Table of Contents
 - [Features](#-features)
