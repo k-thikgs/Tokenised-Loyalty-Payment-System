@@ -1,7 +1,8 @@
 import { ethers } from "ethers";
 import EnhancedLoyaltyProgram from "./abis/EnhancedLoyaltyProgram.json";
 
-const CONTRACT_ADDRESS = "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"; // Update this after deployment
+// Contract with updated pointsToEthRate where 1 loyalty point = 0.0001 ETH
+const CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"; // Update this with the newly deployed contract address
 
 // Get the loyalty contract with signer
 export async function getLoyaltyContract() {

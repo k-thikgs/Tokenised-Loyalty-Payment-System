@@ -16,7 +16,7 @@ const PRODUCTS = [
     id: 1,
     name: 'Premium Wireless Headphones',
     price: 0.01, // ETH
-    pointsReward: 100,
+    pointsReward: 10, // Reduced from 100 to 10
     image: 'https://images.unsplash.com/photo-1585298723682-7115561c51b7?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
     description: 'High-quality wireless headphones with active noise cancellation, 30-hour battery life, and premium sound.',
     categories: ['Electronics', 'Audio']
@@ -25,7 +25,7 @@ const PRODUCTS = [
     id: 2,
     name: 'Smart Fitness Watch',
     price: 0.02, // ETH
-    pointsReward: 200,
+    pointsReward: 20, // Reduced from 200 to 20
     image: 'https://images.unsplash.com/photo-1579586337278-3befd40fd17a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
     description: 'Track your fitness goals with heart rate monitoring, sleep tracking, and smart notifications.',
     categories: ['Electronics', 'Fitness']
@@ -34,7 +34,7 @@ const PRODUCTS = [
     id: 3,
     name: 'Portable Bluetooth Speaker',
     price: 0.005, // ETH
-    pointsReward: 50,
+    pointsReward: 5, // Reduced from 50 to 5
     image: 'https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
     description: 'Waterproof speaker with rich bass, 12-hour battery life, and compact design perfect for any adventure.',
     categories: ['Electronics', 'Audio']
@@ -43,7 +43,7 @@ const PRODUCTS = [
     id: 4,
     name: 'Organic Cotton T-Shirt',
     price: 0.008, // ETH
-    pointsReward: 80,
+    pointsReward: 8, // Reduced from 80 to 8
     image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
     description: 'Sustainably sourced cotton t-shirt with modern fit and premium comfort.',
     categories: ['Fashion', 'Clothing']
@@ -52,7 +52,7 @@ const PRODUCTS = [
     id: 5,
     name: 'Stainless Steel Water Bottle',
     price: 0.004, // ETH
-    pointsReward: 40,
+    pointsReward: 4, // Reduced from 40 to 4
     image: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
     description: 'Double-walled insulated water bottle keeps drinks cold for 24 hours or hot for 12 hours.',
     categories: ['Lifestyle', 'Accessories']
@@ -61,7 +61,7 @@ const PRODUCTS = [
     id: 6,
     name: 'Wireless Charging Pad',
     price: 0.006, // ETH
-    pointsReward: 60,
+    pointsReward: 6, // Reduced from 60 to 6
     image: 'https://images.unsplash.com/photo-1622470953794-aa9c70b0fb9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
     description: 'Fast wireless charging pad compatible with all Qi-enabled devices, sleek modern design.',
     categories: ['Electronics', 'Accessories']
@@ -83,6 +83,10 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [notification, setNotification] = useState(null);
+  const [activeDiscounts, setActiveDiscounts] = useState({
+    percentDiscount: 0,
+    freeShipping: false
+  });
   
   // Connect wallet
   const handleConnectWallet = async () => {
@@ -166,8 +170,31 @@ function App() {
       }
     };
     
-    // Listen for custom point issuance events
+    // Listen for reward redemption events
+    const handleRewardRedeemed = (event) => {
+      if (event.detail && event.detail.user && 
+          event.detail.user.toLowerCase() === account.toLowerCase()) {
+        
+        // Apply the appropriate discount based on reward type
+        if (event.detail.rewardType === "percentDiscount") {
+          setActiveDiscounts(prev => ({
+            ...prev,
+            percentDiscount: event.detail.rewardValue
+          }));
+          showNotification(`${event.detail.rewardValue}% discount activated for your next purchase!`, "success");
+        } else if (event.detail.rewardType === "freeShipping") {
+          setActiveDiscounts(prev => ({
+            ...prev,
+            freeShipping: true
+          }));
+          showNotification("Free shipping activated for your next order!", "success");
+        }
+      }
+    };
+    
+    // Listen for custom point issuance and reward redemption events
     window.addEventListener('pointsIssued', handlePointsIssued);
+    window.addEventListener('rewardRedeemed', handleRewardRedeemed);
     
     // Auto-refresh balances periodically when connected
     const intervalId = setInterval(() => {
@@ -180,6 +207,7 @@ function App() {
       // Clean up all listeners
       if (cleanup) cleanup();
       window.removeEventListener('pointsIssued', handlePointsIssued);
+      window.removeEventListener('rewardRedeemed', handleRewardRedeemed);
       clearInterval(intervalId);
     };
   }, [account, fetchDetails]);
@@ -209,9 +237,10 @@ function App() {
     return cart.reduce((total, item) => total + item.price, 0);
   };
 
-  // Calculate total points to be earned
+  // Calculate total points to be earned - reduce to make points harder to accumulate
   const calculatePointsToEarn = () => {
-    return cart.reduce((total, item) => total + item.pointsReward, 0);
+    // Only earn 1/3 of the original point value to make accumulation more difficult
+    return Math.floor(cart.reduce((total, item) => total + item.pointsReward, 0) / 3);
   };
 
   // Calculate maximum points that can be used
@@ -229,11 +258,26 @@ function App() {
     return maxUsable / POINTS_TO_ETH_RATE;
   };
 
-  // Calculate final price after points discount
+  // Calculate final price after all discounts
   const finalPrice = () => {
     const total = calculateTotal();
-    const discount = pointsDiscount();
-    return Math.max(0, total - discount);
+    let discountAmount = 0;
+    
+    // Direct points-to-ETH conversion discount
+    if (usePointsForPurchase && parseFloat(points) > 0) {
+      discountAmount += pointsDiscount();
+    }
+    
+    // Percentage discount from reward redemptions
+    if (activeDiscounts.percentDiscount > 0) {
+      const percentDiscount = total * (activeDiscounts.percentDiscount / 100);
+      discountAmount += percentDiscount;
+    }
+    
+    // Apply free shipping discount logic if implemented
+    // No shipping costs in this demo
+    
+    return Math.max(0, total - discountAmount);
   };
 
   // Process purchase
@@ -251,21 +295,27 @@ function App() {
       if (usePointsForPurchase && parseFloat(points) > 0) {
         const pointsToUse = maxPointsForPurchase();
         
-        try {
-          // Redeem points for discount
-          const tx = await contract.redeemPoints(account, ethers.parseUnits(pointsToUse.toString(), 18));
-          await tx.wait();
-          showNotification(`Redeemed ${pointsToUse} points for a discount!`, "success");
-        } catch (error) {
-          console.error("Error redeeming points:", error);
-          showNotification("Error redeeming points. Proceeding without discount.", "error");
+        // Only attempt to redeem if there are enough points
+        if (pointsToUse > 0) {
+          try {
+            // Convert to string and ensure it's a proper value before parsing to ethers units
+            const pointsToUseString = pointsToUse.toString();
+            // Redeem points for discount
+            const tx = await contract.redeemPoints(account, ethers.parseUnits(pointsToUseString, 18));
+            await tx.wait();
+            showNotification(`Redeemed ${pointsToUse} points for a discount!`, "success");
+          } catch (error) {
+            console.error("Error redeeming points:", error);
+            showNotification("Error redeeming points. Proceeding without discount.", "error");
+          }
         }
       }
       
       // Process the actual ETH payment for regular users
       try {
         // Check if total ETH to pay is greater than 0
-        if (totalEth > 0) {
+        // Use a threshold to avoid extremely small values that can cause errors
+        if (totalEth > 0.000001) {
           const provider = new ethers.BrowserProvider(window.ethereum);
           const signer = await provider.getSigner();
           
@@ -273,14 +323,20 @@ function App() {
           // This is a simulated store address - in a real app, this would be the store's wallet
           const storeAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
           
+          // Ensure the value is properly formatted as a string to avoid scientific notation issues
+          const ethValue = totalEth.toFixed(18).toString();
+          
           // Send ETH transaction
           const tx = await signer.sendTransaction({
             to: storeAddress,
-            value: ethers.parseEther(totalEth.toString())
+            value: ethers.parseEther(ethValue)
           });
           
           await tx.wait();
           showNotification(`Payment of ${totalEth} ETH processed successfully!`, "success");
+        } else if (totalEth > 0) {
+          // Handle very small amounts that might cause parsing issues
+          showNotification("Payment amount too small, proceeding as free purchase", "info");
         }
       } catch (error) {
         console.error("Payment error:", error);
@@ -316,6 +372,12 @@ function App() {
         console.error("Points issuance error:", error);
         showNotification("Purchase completed, but there was an error with points issuance.", "warning");
       }
+      
+      // Reset any applied discounts after successful purchase
+      setActiveDiscounts({
+        percentDiscount: 0,
+        freeShipping: false
+      });
       
       // Clear cart and refresh
       setCart([]);
@@ -543,6 +605,21 @@ function App() {
                         <span>Points to Earn:</span>
                         <span>+{calculatePointsToEarn()}</span>
                       </div>
+                      
+                      {/* Show active discounts */}
+                      {activeDiscounts.percentDiscount > 0 && (
+                        <div className="active-discount">
+                          <span className="discount-badge">{activeDiscounts.percentDiscount}% OFF</span>
+                          <span>Discount applied from reward redemption!</span>
+                        </div>
+                      )}
+                      
+                      {activeDiscounts.freeShipping && (
+                        <div className="active-discount">
+                          <span className="discount-badge">FREE</span>
+                          <span>Free shipping applied!</span>
+                        </div>
+                      )}
                       
                       {parseFloat(points) > 0 && (
                         <div className="use-points-option">

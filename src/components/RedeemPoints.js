@@ -16,6 +16,7 @@ function RedeemPoints({ account, onRedeemComplete }) {
   const [maxRedeemablePoints, setMaxRedeemablePoints] = useState(0);
   const [newMaxPoints, setNewMaxPoints] = useState("");
   const [showAdminControls, setShowAdminControls] = useState(false);
+  const [selectedReward, setSelectedReward] = useState(null);
 
   // Fetch approved partners and check if user is owner
   useEffect(() => {
@@ -24,8 +25,38 @@ function RedeemPoints({ account, onRedeemComplete }) {
       checkOwnership();
       getPointsBalance();
       fetchMaxRedeemablePoints();
+      
+      // Ensure partners are properly approved in the contract if user is owner
+      const approvePartners = async () => {
+        try {
+          if (isOwner) {
+            const contract = await getLoyaltyContract();
+            const mockPartners = [
+              "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+            ];
+            
+            for (const partner of mockPartners) {
+              // Check if partner is already approved
+              const isApproved = await contract.approvedPartners(partner);
+              if (!isApproved) {
+                const tx = await contract.setApprovedPartner(partner, true);
+                await tx.wait();
+                console.log(`Partner ${partner} approved successfully`);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error approving partners:", err);
+        }
+      };
+      
+      if (isOwner) {
+        approvePartners();
+      }
     }
-  }, [account]);
+  }, [account, isOwner]);
 
   // Calculate ETH value when redemption amount changes
   useEffect(() => {
@@ -123,11 +154,12 @@ function RedeemPoints({ account, onRedeemComplete }) {
       }
 
       // Set reward options - in a real app, these would be fetched from a database
+      // Updated to more realistic values that align with our reduced point system
       setRewardOptions([
-        { points: "1000", description: "10% discount on next purchase" },
-        { points: "5000", description: "Free standard shipping for 3 months" },
-        { points: "10000", description: "Exclusive member gift" },
-        { points: "25000", description: "VIP access to special events" },
+        { id: "discount5", points: "10", description: "5% discount on next purchase", type: "percentDiscount", value: 5 },
+        { id: "freeShipping", points: "50", description: "Free standard shipping on next order", type: "freeShipping", value: true },
+        { id: "memberGift", points: "100", description: "Exclusive member gift", type: "physicalReward", value: "Gift" },
+        { id: "vipAccess", points: "500", description: "VIP access to special events", type: "specialAccess", value: "VIP" },
       ]);
       
     } catch (err) {
@@ -142,6 +174,83 @@ function RedeemPoints({ account, onRedeemComplete }) {
       setIsOwner(owner.toLowerCase() === account.toLowerCase());
     } catch (err) {
       console.error("Error checking ownership:", err);
+    }
+  };
+
+  // Apply a reward after redemption
+  const applyReward = (reward) => {
+    // Dispatch a custom event that App.js can listen for
+    const rewardEvent = new CustomEvent('rewardRedeemed', {
+      detail: {
+        user: account,
+        rewardType: reward.type,
+        rewardValue: reward.value,
+        rewardId: reward.id,
+        pointsCost: reward.points
+      }
+    });
+    window.dispatchEvent(rewardEvent);
+    
+    let rewardMessage = "";
+    switch(reward.type) {
+      case "percentDiscount":
+        rewardMessage = `Your ${reward.value}% discount has been applied and will be available on your next purchase!`;
+        break;
+      case "freeShipping":
+        rewardMessage = "Free shipping has been activated for your next order!";
+        break;
+      case "physicalReward":
+        rewardMessage = "Your exclusive gift will be added to your next order!";
+        break;
+      case "specialAccess":
+        rewardMessage = "VIP access granted! Check your email for details.";
+        break;
+      default:
+        rewardMessage = "Reward applied successfully!";
+    }
+    
+    setStatus(`✅ ${rewardMessage}`);
+  };
+
+  // Redeem points for a specific reward
+  const redeemForReward = async (reward) => {
+    const pointsNeeded = parseFloat(reward.points);
+    
+    if (parseFloat(pointsBalance) < pointsNeeded) {
+      setStatus(`❌ Not enough points. You need ${pointsNeeded} points for this reward.`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setStatus(`⏳ Redeeming ${pointsNeeded} points for ${reward.description}...`);
+      
+      // Convert to string and ensure it's a proper value
+      const pointsToUse = pointsNeeded.toString();
+      
+      const contract = await getLoyaltyContract();
+      const tx = await contract.redeemPoints(account, ethers.parseUnits(pointsToUse, 18));
+      await tx.wait();
+      
+      // Update local points balance
+      getPointsBalance();
+      
+      // Apply the reward effect
+      applyReward(reward);
+      
+      if (onRedeemComplete) onRedeemComplete();
+      
+    } catch (err) {
+      console.error(err);
+      let errorMessage = err.message;
+      if (err.reason) {
+        errorMessage = err.reason;
+      } else if (err.data && err.data.message) {
+        errorMessage = err.data.message;
+      }
+      setStatus("❌ Error: " + errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -233,12 +342,26 @@ function RedeemPoints({ account, onRedeemComplete }) {
     }
   };
 
-  const selectRewardOption = (points) => {
-    setRedeemAmount(points);
+  const selectRewardOption = (reward) => {
+    setSelectedReward(reward.id === selectedReward ? null : reward.id);
+    setRedeemAmount(reward.points);
   };
 
   const toggleAdminControls = () => {
     setShowAdminControls(!showAdminControls);
+  };
+
+  // Show a message if partners aren't approved and user isn't an owner
+  const showPartnersNotApprovedMessage = () => {
+    if (!isOwner && partners.length > 0) {
+      return (
+        <div className="partners-note">
+          Note: If redemption fails, partners may not be approved in the contract. 
+          Please ask the admin to approve them.
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -299,12 +422,24 @@ function RedeemPoints({ account, onRedeemComplete }) {
             .filter(option => parseFloat(option.points) <= parseFloat(maxRedeemablePoints))
             .map((option, index) => (
               <div 
-                key={index} 
-                className={`reward-option ${redeemAmount === option.points ? 'selected' : ''}`}
-                onClick={() => selectRewardOption(option.points)}
+                key={option.id || index} 
+                className={`reward-option ${selectedReward === option.id ? 'selected' : ''}`}
+                onClick={() => selectRewardOption(option)}
               >
                 <div className="reward-points">{option.points}</div>
                 <div className="reward-description">{option.description}</div>
+                {selectedReward === option.id && (
+                  <button 
+                    className="get-reward-button"
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent triggering selectRewardOption
+                      redeemForReward(option);
+                    }}
+                    disabled={loading || parseFloat(option.points) > parseFloat(pointsBalance)}
+                  >
+                    Get Reward
+                  </button>
+                )}
               </div>
             ))}
         </div>
@@ -356,6 +491,8 @@ function RedeemPoints({ account, onRedeemComplete }) {
                 </div>
               ))}
             </div>
+            
+            {showPartnersNotApprovedMessage()}
             
             <button 
               onClick={redeemWithPartner}
